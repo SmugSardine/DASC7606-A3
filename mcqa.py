@@ -31,6 +31,7 @@ def parse_arguments():
     # Other arguments
     parser.add_argument('--max_length', type=int, default=512, help='Maximum sequence length')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
+    parser.add_argument('--temperature', type=float, default=0.6, help='Temperature for text generation')
 
     args = parser.parse_args()
 
@@ -92,18 +93,20 @@ def create_prompt(question, choices, tokenizer):
     Create a formatted prompt for the model.
     """
     prompt = f"Question: {question}\n\nChoices:\n"
+    # prompt = f"Question: {question}Let's think step by step before we dive into the answer.\n\nChoices:\n"
 
     for label, text in zip(choices['label'], choices['text']):
         prompt += f"{label}) {text}\n"
 
     prompt += "\nProvide a very brief rationale then state 'Answer: X' where X is one of the option letters (A, B, C, D, or E)."
-
+    # prompt += "\nProvide a step-by-step rationale then state 'Answer: X' where X is one of the option letters (A, B, C, D, or E)."
+    
     prompt = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
     return prompt, choices['label']
 
 
-def get_next_token_probabilities(model, tokenizer, prompt, options, device, max_new_tokens=64):
+def get_next_token_probabilities(model, tokenizer, prompt, options, device, temperature, max_new_tokens=64):
     """
     Generate rationale and get probabilities for the final answer.
     """
@@ -117,7 +120,7 @@ def get_next_token_probabilities(model, tokenizer, prompt, options, device, max_
             **inputs,
             max_new_tokens=max_new_tokens,
             pad_token_id=tokenizer.eos_token_id,
-            temperature=0.6,
+            temperature=temperature,
             do_sample=True,
             num_return_sequences=1,
             eos_token_id=tokenizer.eos_token_id,
@@ -180,7 +183,8 @@ def majority_vote(all_predictions, min_probability_threshold):
     total_votes = len(filtered_predictions)
 
     # Get the majority prediction and its confidence
-    majority_pred = vote_counts.most_common(1)["Write Your Code Here"]["Write Your Code Here"]
+    # majority_pred = vote_counts.most_common(1)["FIXME: Write Your Code Here"]["FIXME: Write Your Code Here"]
+    majority_pred = vote_counts.most_common(1)[0][0]
     confidence = vote_counts[majority_pred] / total_votes
 
     # Select the rationale from the most confident prediction
@@ -245,7 +249,7 @@ def main():
             all_predictions = []
             for _ in range(args.num_forward_passes):
                 probs, rationale = get_next_token_probabilities(
-                    model, tokenizer, prompt, options, args.device)
+                    model, tokenizer, prompt, options, args.device, args.temperature)
                 all_predictions.append((probs, rationale))
 
             # Perform majority voting
